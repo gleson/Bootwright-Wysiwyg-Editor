@@ -2,6 +2,15 @@ import { el, icon } from '../utils/dom.js';
 import { t, listLocales, getLocale, setLocale } from '../i18n/index.js';
 
 /**
+ * Último editor em que o usuário clicou ou focou. Com vários editores na
+ * mesma página, cada um registra o próprio listener de `paste` no
+ * `document`; é por aqui que um Ctrl+V feito fora de qualquer editor chega
+ * só ao editor em uso — sem isso, o primeiro editor da página ficava com
+ * o conteúdo, mesmo com o bloco selecionado em outro.
+ */
+let activeEditor = null;
+
+/**
  * Topbar — comandos globais do editor.
  *
  * Funções:
@@ -356,10 +365,30 @@ export class Topbar {
 
   /* ---------- Atalhos globais ---------- */
 
+  /**
+   * Colagem dentro de um editor é dele. Fora de todos, vale o último editor
+   * usado — ou, antes de qualquer interação, só o editor que estiver
+   * sozinho na página.
+   */
+  _ownsPaste(target) {
+    const owner = target instanceof Element ? target.closest('[data-editor-ready]') : null;
+    if (owner) return owner === this.root;
+    const live = activeEditor && activeEditor.root?.isConnected ? activeEditor : null;
+    if (live) return live === this.editor;
+    if (this.editor.getSelectedId()) return true;
+    return document.querySelectorAll('[data-editor-ready]').length <= 1;
+  }
+
   _wireKeyboard() {
     // Ctrl+V fora de campos: cola o bloco copiado no editor ou converte o
     // conteúdo externo (Word, Google Docs, web, .txt/.md) em blocos. É
     // tratado no evento `paste` (e não no keydown) para ler o clipboard.
+    const markActive = (e) => {
+      if (e.target instanceof Node && this.root.contains(e.target)) activeEditor = this.editor;
+    };
+    document.addEventListener('pointerdown', markActive, true);
+    document.addEventListener('focusin', markActive, true);
+
     document.addEventListener('paste', (e) => {
       // Já tratado pela edição inline (que pode ter encerrado o contenteditable).
       if (e.defaultPrevented) return;
@@ -369,6 +398,7 @@ export class Topbar {
         t.closest('dialog, [role="dialog"], .modal'))) {
         return;
       }
+      if (!this._ownsPaste(t)) return;
       if (this.editor.handleClipboardPaste(e.clipboardData)) e.preventDefault();
     });
 
