@@ -19,6 +19,7 @@ import { formatHTML } from '../utils/htmlFormat.js';
 import { safeCss } from '../utils/url.js';
 import { generateThemeCss } from '../utils/bootstrapTheme.js';
 import { markdownToHtml } from '../utils/markdownImport.js';
+import { clipboardToHtml } from '../utils/clipboardImport.js';
 import { BlockRegistry } from '../blocks/BlockRegistry.js';
 import { builtInBlocks } from '../blocks/built-in/index.js';
 import { BUILT_IN_TEMPLATES, getBuiltInTemplate } from '../blocks/built-in/templates.js';
@@ -1270,7 +1271,101 @@ export class Editor {
     const node = this.getNode(id);
     if (!node) return false;
     this._clipboard = this._cloneForDuplicate(node);
+    this._clipboardToken = generateId();
+    this._writeSystemClipboard(node, this._clipboardToken);
     this.bus.emit('clipboard:changed', { type: node.type });
+    return true;
+  }
+
+  /**
+   * Espelha o bloco copiado na área de transferência do sistema (HTML + texto)
+   * com um marcador. No Ctrl+V, se o marcador ainda estiver lá, colamos o
+   * bloco interno (fidelidade total); se não, o usuário copiou outra coisa
+   * depois — e colamos esse conteúdo externo.
+   */
+  _writeSystemClipboard(node, token) {
+    let html = '';
+    try {
+      const el = this._nodeToHtml(node);
+      this._stripEditorAttrs(el);
+      html = el.outerHTML;
+    } catch { /* bloco sem export — só o marcador */ }
+    const onCopy = (e) => {
+      e.preventDefault();
+      e.clipboardData?.setData('text/html',
+        `<meta name="wysiwyg-block" content="${token}">${html}`);
+      e.clipboardData?.setData('text/plain', this._htmlToText(html));
+    };
+    document.addEventListener('copy', onCopy, { capture: true, once: true });
+    try { document.execCommand('copy'); } catch { /* sem gesto do usuário */ }
+    document.removeEventListener('copy', onCopy, { capture: true });
+  }
+
+  _htmlToText(html) {
+    const d = new DOMParser().parseFromString(html || '', 'text/html');
+    return (d.body.innerText ?? d.body.textContent ?? '').trim();
+  }
+
+  /**
+   * Converte o conteúdo da área de transferência (HTML do Word/Docs/web,
+   * Markdown ou texto puro) em nós prontos para inserir.
+   * @returns {{ html: string, nodes: object[] }}
+   */
+  clipboardToNodes({ html = '', text = '' } = {}) {
+    const clean = clipboardToHtml({ html, text });
+    if (!clean) return { html: '', nodes: [] };
+    const nodes = htmlToBlocks(clean, this.sanitizer, { richBlocks: true })
+      .map((d) => this._buildImportNode(d))
+      .filter(Boolean);
+    return { html: clean, nodes };
+  }
+
+  /**
+   * Insere `nodes` logo após `targetId` (mesmo pai) ou no fim da página, num
+   * único passo de histórico. Com `replaceTarget`, o alvo é removido.
+   * Seleciona o último bloco inserido.
+   */
+  insertNodesAt(targetId, nodes, { replaceTarget = false, extraCmds = [] } = {}) {
+    if (!nodes.length) return [];
+    let parentId = this.rootId;
+    let index = this.getRoot().children.length;
+    if (targetId) {
+      const parent = this.getParentOf(targetId);
+      if (parent) {
+        parentId = parent.id;
+        index = parent.children.findIndex((c) => c.id === targetId) + 1;
+      }
+    }
+    const cmds = [...extraCmds];
+    nodes.forEach((data, i) => {
+      cmds.push(new AddNodeCommand(this.state, parentId, data, index + i));
+    });
+    if (replaceTarget && targetId) cmds.push(new RemoveNodeCommand(this.state, targetId));
+    const results = this.history.execute(
+      new BatchCommand(cmds, `Colar ${nodes.length} bloco(s)`));
+    const ids = (Array.isArray(results) ? results : [])
+      .filter((r) => typeof r === 'string' && this.getNode(r));
+    if (ids.length) this.selectBlock(ids[ids.length - 1]);
+    return ids;
+  }
+
+  /**
+   * Ctrl+V fora de edição inline: bloco interno (se o marcador ainda está na
+   * área de transferência) ou conteúdo externo convertido em blocos.
+   * @returns {boolean} true se tratou o evento
+   */
+  handleClipboardPaste(cd) {
+    const html = cd?.getData('text/html') ?? '';
+    const text = cd?.getData('text/plain') ?? '';
+    const target = this.getSelectedId();
+    const marker = /<meta name="wysiwyg-block" content="([^"]+)"/.exec(html)?.[1];
+    if (this._clipboard && (marker === this._clipboardToken || (!html && !text))) {
+      this.pasteBlock(target);
+      return true;
+    }
+    const { nodes } = this.clipboardToNodes({ html, text });
+    if (!nodes.length) return false;
+    this.insertNodesAt(target, nodes);
     return true;
   }
 
@@ -1409,6 +1504,7 @@ export class Editor {
     const node = this.getNode(id);
     if (!node) return;
 
+    const propKey = typeof target === 'string' ? target : null;
     // Normaliza: string vira target padrão (prop do nó, elemento = root do bloco)
     if (typeof target === 'string') {
       const propKey = target;
@@ -1482,37 +1578,18 @@ export class Editor {
     const onPaste = (e) => {
       e.preventDefault();
       const cd = e.clipboardData || globalThis.clipboardData;
-      // Sempre tratar conteúdo colado como texto puro — evita herdar
-      // classes/styles de sites de origem que poluem a formatação do canvas.
+      const html = cd?.getData('text/html') ?? '';
       const text = cd?.getData('text/plain') ?? '';
-      if (!text) return;
-      const s = document.getSelection();
-      if (!s?.rangeCount) return;
-      const r = s.getRangeAt(0);
-      r.deleteContents();
-      if (useHtml) {
-        // Preserva quebras de linha como <br> no contenteditable.
-        const lines = text.split(/\r?\n/);
-        const frag = document.createDocumentFragment();
-        lines.forEach((line, i) => {
-          if (i > 0) frag.appendChild(document.createElement('br'));
-          if (line) frag.appendChild(document.createTextNode(line));
-        });
-        r.insertNode(frag);
-      } else {
-        r.insertNode(document.createTextNode(text));
-      }
-      r.collapse(false);
-      s.removeAllRanges();
-      s.addRange(r);
+      if (!html && !text) return;
+      this._pasteIntoInlineEdit({ html, text });
     };
-
     element.addEventListener('keydown', onKeyDown);
     element.addEventListener('blur', onBlur);
     element.addEventListener('paste', onPaste);
 
     this.inlineEdit = {
-      id, target, originalValue, el: element, useHtml, sanitizeProfile,
+      id, target, originalValue, el: element, useHtml, sanitizeProfile, multiline,
+      propKey,
       cleanup: () => {
         element.removeEventListener('keydown', onKeyDown);
         element.removeEventListener('blur', onBlur);
@@ -1553,6 +1630,110 @@ export class Editor {
     delete el.dataset.editing;
     this.inlineEdit = null;
     this.bus.emit('inline-edit:ended', { canceled: true });
+  }
+
+  /**
+   * Colagem durante a edição inline. Conteúdo com vários blocos (ou um
+   * título/lista/tabela) colado num parágrafo/título/citação divide o bloco
+   * no cursor e insere os blocos convertidos entre as duas metades. Conteúdo
+   * de um parágrafo só entra inline, preservando negrito/itálico/links quando
+   * o bloco é rich-text. Demais alvos (código, células) recebem texto puro.
+   */
+  _pasteIntoInlineEdit({ html, text }) {
+    const ie = this.inlineEdit;
+    if (!ie) return;
+    const { id, el, useHtml, sanitizeProfile, propKey } = ie;
+    const s = document.getSelection();
+    if (!s?.rangeCount) return;
+    const r = s.getRangeAt(0);
+    if (!el.contains(r.commonAncestorContainer)) return;
+    const node = this.getNode(id);
+
+    const insertFragment = (frag) => {
+      const last = frag.lastChild;
+      r.deleteContents();
+      r.insertNode(frag);
+      if (last) r.setStartAfter(last);
+      r.collapse(true);
+      s.removeAllRanges();
+      s.addRange(r);
+    };
+    const insertPlain = () => {
+      const frag = document.createDocumentFragment();
+      if (useHtml) {
+        // Preserva quebras de linha como <br> no contenteditable.
+        text.split(/\r?\n/).forEach((line, i) => {
+          if (i > 0) frag.appendChild(document.createElement('br'));
+          if (line) frag.appendChild(document.createTextNode(line));
+        });
+      } else {
+        frag.appendChild(document.createTextNode(text));
+      }
+      insertFragment(frag);
+    };
+    const insertHtml = (raw) => {
+      const tpl = document.createElement('template');
+      tpl.innerHTML = this.sanitizer.isReady()
+        ? this.sanitizer.html(raw, sanitizeProfile) : raw;
+      insertFragment(tpl.content);
+    };
+
+    // Código e afins: sempre texto literal.
+    const splittable = !!propKey && !!this.getParentOf(id)
+      && ['paragraph', 'heading', 'blockquote'].includes(node?.type);
+    if (!useHtml && !splittable) { insertPlain(); return; }
+
+    const { html: clean, nodes } = this.clipboardToNodes({ html, text });
+    if (!nodes.length) { if (text) insertPlain(); return; }
+
+    const single = nodes.length === 1 && nodes[0].type === 'paragraph';
+    if (single || !splittable) {
+      if (!useHtml) { insertPlain(); return; }
+      insertHtml(single ? nodes[0].props.text : clean);
+      return;
+    }
+
+    // Divide o bloco no cursor: [antes] + blocos colados + [depois].
+    const sliceValue = (range) => {
+      const div = document.createElement('div');
+      div.appendChild(range.cloneContents());
+      if (!useHtml) return div.textContent;
+      return this.sanitizer.isReady()
+        ? this.sanitizer.html(div.innerHTML, sanitizeProfile) : div.innerHTML;
+    };
+    const isEmpty = (v) => !String(v)
+      .replace(/<br\s*\/?>/gi, '').replace(/&nbsp;/g, ' ').trim();
+    const before = document.createRange();
+    before.selectNodeContents(el);
+    before.setEnd(r.startContainer, r.startOffset);
+    const after = document.createRange();
+    after.selectNodeContents(el);
+    after.setStart(r.endContainer, r.endOffset);
+    const beforeVal = sliceValue(before);
+    const afterVal = sliceValue(after);
+
+    // Encerra a edição sem commit — o lote abaixo grava tudo num passo só.
+    ie.cleanup();
+    el.contentEditable = 'false';
+    delete el.dataset.editing;
+    this.inlineEdit = null;
+    this.bus.emit('inline-edit:ended', { id });
+
+    const toInsert = [...nodes];
+    if (!isEmpty(afterVal)) {
+      const tail = this._cloneForDuplicate(node);
+      tail.props[propKey] = afterVal;
+      toInsert.push(tail);
+    }
+    const keepHead = !isEmpty(beforeVal);
+    const extraCmds = keepHead && beforeVal !== ie.originalValue
+      ? [new UpdateNodeCommand(this.state, id, { props: { [propKey]: beforeVal } })]
+      : [];
+    if (keepHead && !extraCmds.length) {
+      // Conteúdo igual ao salvo: restaura o DOM (o cursor pode ter sujado).
+      if (useHtml) el.innerHTML = beforeVal; else el.textContent = beforeVal;
+    }
+    this.insertNodesAt(id, toInsert, { replaceTarget: !keepHead, extraCmds });
   }
 
   /** Offset em caracteres do textContent de `root` até (node, offset). */

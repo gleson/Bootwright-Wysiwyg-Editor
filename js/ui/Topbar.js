@@ -357,6 +357,21 @@ export class Topbar {
   /* ---------- Atalhos globais ---------- */
 
   _wireKeyboard() {
+    // Ctrl+V fora de campos: cola o bloco copiado no editor ou converte o
+    // conteúdo externo (Word, Google Docs, web, .txt/.md) em blocos. É
+    // tratado no evento `paste` (e não no keydown) para ler o clipboard.
+    document.addEventListener('paste', (e) => {
+      // Já tratado pela edição inline (que pode ter encerrado o contenteditable).
+      if (e.defaultPrevented) return;
+      const t = e.target;
+      if (t instanceof HTMLElement && (
+        t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable ||
+        t.closest('dialog, [role="dialog"], .modal'))) {
+        return;
+      }
+      if (this.editor.handleClipboardPaste(e.clipboardData)) e.preventDefault();
+    });
+
     document.addEventListener('keydown', (e) => {
       // Esc sempre desseleciona — mesmo dentro de inputs.
       if (e.key === 'Escape' && this.editor.getSelectedId()) {
@@ -430,11 +445,6 @@ export class Topbar {
         if (sel && !textSel) {
           e.preventDefault();
           this.editor.copyBlock(sel);
-        }
-      } else if (e.key === 'v') {
-        if (this.editor.hasClipboard()) {
-          e.preventDefault();
-          this.editor.pasteBlock(this.editor.getSelectedId());
         }
       } else if (e.key === '\\') {
         e.preventDefault(); this._toggleSidebars();

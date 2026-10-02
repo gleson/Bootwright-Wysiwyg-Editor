@@ -57,7 +57,13 @@ function extractCommon(el) {
   return out;
 }
 
-export function htmlToBlocks(html, sanitizer) {
+/**
+ * @param {object} [opts]
+ * @param {boolean} [opts.richBlocks] — mapeia `<table>` → bloco Tabela e
+ *   `<pre>` → bloco Código (em vez do fallback HtmlEmbed). Usado na colagem
+ *   de conteúdo externo, onde não há round-trip a preservar.
+ */
+export function htmlToBlocks(html, sanitizer, opts = {}) {
   if (!html || !html.trim()) return [];
   const doc = new DOMParser().parseFromString(String(html), 'text/html');
   // Se o HTML não tem <html>/<body>, o DOMParser ainda devolve um doc;
@@ -66,7 +72,7 @@ export function htmlToBlocks(html, sanitizer) {
   const body = doc.body;
   const blocks = [];
   for (const el of body.children) {
-    const out = mapElement(el, sanitizer);
+    const out = mapElement(el, sanitizer, opts);
     if (out) blocks.push(...(Array.isArray(out) ? out : [out]));
   }
   if (!blocks.length && body.textContent.trim()) {
@@ -75,8 +81,26 @@ export function htmlToBlocks(html, sanitizer) {
   return blocks;
 }
 
-function mapElement(el, sanitizer) {
+function mapElement(el, sanitizer, opts = {}) {
   const tag = el.tagName.toLowerCase();
+
+  if (opts.richBlocks && tag === 'pre') {
+    return { type: 'code', props: { code: el.textContent, language: 'plain' } };
+  }
+
+  if (opts.richBlocks && tag === 'table') {
+    const cells = Array.from(el.querySelectorAll('tr'))
+      .map((tr) => Array.from(tr.querySelectorAll(':scope > th, :scope > td'))
+        .map((c) => c.textContent.trim()))
+      .filter((r) => r.length);
+    if (!cells.length) return null;
+    const cols = Math.max(...cells.map((r) => r.length));
+    cells.forEach((r) => { while (r.length < cols) r.push(''); });
+    return { type: 'table', props: {
+      rows: cells.length, cols, cells, merges: [],
+      hasHeader: !!el.querySelector('tr:first-child > th'),
+    } };
+  }
 
   if (/^h[1-6]$/.test(tag)) {
     const text = el.textContent.trim();
@@ -143,7 +167,7 @@ function mapElement(el, sanitizer) {
   if (CONTAINER_TAGS.has(tag)) {
     const childBlocks = [];
     for (const c of el.children) {
-      const out = mapElement(c, sanitizer);
+      const out = mapElement(c, sanitizer, opts);
       if (out) childBlocks.push(...(Array.isArray(out) ? out : [out]));
     }
     if (childBlocks.length) {
