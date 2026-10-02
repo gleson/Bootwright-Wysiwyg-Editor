@@ -20,6 +20,8 @@ export class Heading extends Block {
   static allowedChildren = null;
   /** Prop editável via duplo-clique (inline edit). */
   static editableProp = 'text';
+  /** Clique simples já entra em edição com o cursor no ponto clicado. */
+  static clickToEdit = true;
   /**
    * Fast-path: só `props.text` atualiza in-place (textContent do `<hN>`).
    * Mudança de `level` troca a tag → não está no descritor → re-render.

@@ -1497,6 +1497,11 @@ export class Editor {
   /**
    * @param {string|object} target — propKey (string) OU
    *   { element, read(node), write(node, value)→patch } para edição custom (ex.: célula de tabela).
+   *   Opcionais: `getValue(el)`/`setValue(el, v)` quando o valor não é o
+   *   textContent/innerHTML do elemento (ex.: itens do bloco Lista).
+   * @param {object} [opts]
+   * @param {{x:number,y:number}} [opts.caret] — posiciona o cursor no ponto
+   *   clicado (coordenadas de viewport) em vez de no fim do texto.
    */
   startInlineEdit(id, target, opts = {}) {
     if (this.isLocked(id)) { this._lockedToast(); return; }
@@ -1508,8 +1513,12 @@ export class Editor {
     // Normaliza: string vira target padrão (prop do nó, elemento = root do bloco)
     if (typeof target === 'string') {
       const propKey = target;
+      // `editableSelector`: a prop vive num filho do bloco (ex.: o <p> da
+      // citação), não no elemento raiz — evita editar o rodapé junto.
+      const rootEl = this.renderer?.nodeElements.get(id);
+      const selector = this.registry.get(node.type)?.editableSelector;
       target = {
-        element: this.renderer?.nodeElements.get(id),
+        element: (selector && rootEl?.querySelector(selector)) || rootEl,
         read:  (n) => n.props[propKey] ?? '',
         write: (_, v) => ({ props: { [propKey]: v } }),
       };
@@ -1559,7 +1568,9 @@ export class Editor {
     const restored = savedOffsets && this._restoreSelectionFromOffsets(
       element, savedOffsets.start, savedOffsets.end
     );
-    if (!restored) {
+    const placed = !restored && opts.caret
+      && this._placeCaretAtPoint(element, opts.caret.x, opts.caret.y);
+    if (!restored && !placed) {
       // Sem seleção significativa: posiciona caret no fim.
       const range = document.createRange();
       range.selectNodeContents(element);
@@ -1602,7 +1613,8 @@ export class Editor {
   commitInlineEdit() {
     if (!this.inlineEdit) return;
     const { id, target, originalValue, el, cleanup, useHtml, sanitizeProfile } = this.inlineEdit;
-    let newValue = useHtml ? el.innerHTML : el.textContent;
+    let newValue = target.getValue ? target.getValue(el)
+      : useHtml ? el.innerHTML : el.textContent;
     if (useHtml && this.sanitizer.isReady()) {
       newValue = this.sanitizer.html(newValue, sanitizeProfile);
     }
@@ -1622,9 +1634,10 @@ export class Editor {
 
   cancelInlineEdit() {
     if (!this.inlineEdit) return;
-    const { el, originalValue, cleanup, useHtml } = this.inlineEdit;
-    if (useHtml) el.innerHTML = originalValue;
-    else         el.textContent = originalValue;
+    const { el, originalValue, cleanup, useHtml, target } = this.inlineEdit;
+    if (target.setValue) target.setValue(el, originalValue);
+    else if (useHtml)    el.innerHTML = originalValue;
+    else                 el.textContent = originalValue;
     cleanup();
     el.contentEditable = 'false';
     delete el.dataset.editing;
@@ -1734,6 +1747,29 @@ export class Editor {
       if (useHtml) el.innerHTML = beforeVal; else el.textContent = beforeVal;
     }
     this.insertNodesAt(id, toInsert, { replaceTarget: !keepHead, extraCmds });
+  }
+
+  /**
+   * Cursor colapsado no ponto (x, y) da viewport, se ele cair dentro de
+   * `root`. Usa caretPositionFromPoint (padrão) ou caretRangeFromPoint (WebKit).
+   */
+  _placeCaretAtPoint(root, x, y) {
+    let range = null;
+    if (document.caretPositionFromPoint) {
+      const pos = document.caretPositionFromPoint(x, y);
+      if (pos) {
+        range = document.createRange();
+        range.setStart(pos.offsetNode, pos.offset);
+      }
+    } else if (document.caretRangeFromPoint) {
+      range = document.caretRangeFromPoint(x, y);
+    }
+    if (!range || !root.contains(range.startContainer)) return false;
+    range.collapse(true);
+    const sel = document.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    return true;
   }
 
   /** Offset em caracteres do textContent de `root` até (node, offset). */

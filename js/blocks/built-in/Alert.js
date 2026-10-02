@@ -21,6 +21,9 @@ export class Alert extends Block {
   static allowedChildren = null;
   static editableProp = 'text';
   static editableMultiline = true;
+  /** Edita só a mensagem (título e botão de fechar ficam de fora). */
+  static editableSelector = 'p.mb-0';
+  static clickToEdit = true;
   /**
    * Fast-path: só a mensagem (`text`, no `<p class="mb-0">`) atualiza in-place.
    * `heading` cria/remove o `<h4>` condicional → cai no re-render normal.

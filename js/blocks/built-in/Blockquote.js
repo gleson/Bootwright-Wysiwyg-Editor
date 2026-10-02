@@ -14,6 +14,9 @@ export class Blockquote extends Block {
   static allowedChildren = null;
   static editableProp = 'text';
   static editableMultiline = true;
+  /** Edita só o <p> da citação (o rodapé com a fonte fica de fora). */
+  static editableSelector = 'p';
+  static clickToEdit = true;
   /**
    * Fast-path: só a citação (`text`, no `<p>`) atualiza in-place. `source`
    * cria/remove o `<footer>` condicional → cai no re-render normal.

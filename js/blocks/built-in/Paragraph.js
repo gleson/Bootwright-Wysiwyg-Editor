@@ -94,6 +94,8 @@ export class Paragraph extends Block {
   static editableMultiline = true;
   /** Texto suporta formatação inline (bold, italic, underline, link, br). */
   static editableHtml = true;
+  /** Clique simples já entra em edição com o cursor no ponto clicado. */
+  static clickToEdit = true;
   static richTextProfile = RICH_TEXT_PROFILE;
 
   static render(node, ctx) {

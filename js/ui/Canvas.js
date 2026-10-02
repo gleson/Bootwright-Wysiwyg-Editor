@@ -43,6 +43,7 @@ export class Canvas {
           this.editor.toggleBlockSelection(blockEl.dataset.blockId);
         } else {
           this.editor.selectBlock(blockEl.dataset.blockId);
+          if (!e.ctrlKey && !e.metaKey && !e.altKey) this._maybeClickToEdit(blockEl, e);
         }
       } else {
         this.editor.deselectBlock();
@@ -53,6 +54,9 @@ export class Canvas {
     // via `getInlineEditTarget(blockEl, eventTarget, node)` — usado pela Tabela
     // pra editar célula a célula. Senão, cai no `editableProp` simples.
     this.region.addEventListener('dblclick', (e) => {
+      // Já em edição (o clique simples abriu): o duplo-clique nativo só
+      // seleciona a palavra — não reinicia a edição.
+      if (e.target.closest('[data-editing="true"]')) return;
       const blockEl = e.target.closest('[data-block-id]');
       if (!blockEl) return;
       const id = blockEl.dataset.blockId;
@@ -90,6 +94,30 @@ export class Canvas {
         this._selRaf = null;
         this._maybeStartRichEditFromSelection();
       });
+    });
+  }
+
+  /**
+   * Clique simples em bloco de texto (`clickToEdit`) entra direto em edição
+   * com o cursor piscando no ponto clicado — como num editor de texto comum.
+   */
+  _maybeClickToEdit(blockEl, e) {
+    const id = blockEl.dataset.blockId;
+    const node = this.editor.getNode(id);
+    const BlockClass = node && this.editor.registry.get(node.type);
+    if (!BlockClass?.clickToEdit || this.editor.isLocked(id)) return;
+    if (BlockClass.editableSelector && !e.target.closest(BlockClass.editableSelector)) return;
+
+    let target = BlockClass.editableProp;
+    if (typeof BlockClass.getInlineEditTarget === 'function') {
+      target = BlockClass.getInlineEditTarget(blockEl, e.target, node);
+    }
+    if (!target) return;
+    this.editor.startInlineEdit(id, target, {
+      multiline: BlockClass.editableMultiline === true,
+      html:      BlockClass.editableHtml === true,
+      sanitizeProfile: BlockClass.richTextProfile,
+      caret: { x: e.clientX, y: e.clientY },
     });
   }
 

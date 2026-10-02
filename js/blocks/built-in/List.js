@@ -19,6 +19,35 @@ export class List extends Block {
     attrs: {},
   };
   static allowedChildren = null;
+  static clickToEdit = true;
+  static editableMultiline = true;
+
+  /**
+   * Edição inline direto no <ul>/<ol>: Enter cria item novo (nativo do
+   * contenteditable), Backspace junta itens. O valor é lido por linha do
+   * innerText — um item por linha, como em `props.items`.
+   */
+  static getInlineEditTarget(blockEl, _eventTarget, node) {
+    const isGroup = () => node.classes?.includes('list-group');
+    return {
+      element: blockEl,
+      multiline: true,
+      read: (n) => String(n.props.items ?? ''),
+      write: (_, v) => ({ props: { items: v } }),
+      getValue: (el) => el.innerText.split('\n')
+        .map((l) => l.trim()).filter(Boolean).join('\n'),
+      setValue: (el, v) => {
+        el.replaceChildren(...String(v).split('\n')
+          .map((l) => l.trim()).filter(Boolean)
+          .map((t) => {
+            const li = document.createElement('li');
+            if (isGroup()) li.className = 'list-group-item';
+            li.textContent = t;
+            return li;
+          }));
+      },
+    };
+  }
 
   static render(node) {
     const tag = node.props.ordered ? 'ol' : 'ul';
