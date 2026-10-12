@@ -213,8 +213,14 @@ export class ControlFactory {
   /** Atualiza valor do controle a partir do nó. Pula se o input está focado. */
   sync(input, schema, node) {
     if (schema.type === 'action' || schema.type === 'class-picker') return;
-    const inner = this._innerInput(input, schema);
-    if (this._isFocused(inner ?? input)) return;
+    // items-list não pula pelo foco: o foco costuma estar nos PRÓPRIOS botões
+    // dela (Adicionar, ↑/↓, remover) logo depois do clique, e pular deixava a
+    // lista do painel desatualizada (aba nova no canvas, ausente no painel).
+    // `_setItemsListValue` já preserva o input em que se está digitando.
+    if (schema.type !== 'items-list') {
+      const inner = this._innerInput(input, schema);
+      if (this._isFocused(inner ?? input)) return;
+    }
     const value = this._read(schema.bind, node);
     this._setValue(input, schema, value);
   }
