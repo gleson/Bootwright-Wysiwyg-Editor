@@ -344,3 +344,31 @@ function cleanTable(doc, table) {
   }
   return out.children.length ? out.outerHTML : null;
 }
+
+/**
+ * Lê a área de transferência do sistema com formatação (`clipboard.read`),
+ * para o botão "Colar" — no celular é o único jeito de colar fora de um
+ * campo editável. Devolve `null` quando não dá (API ausente, permissão
+ * negada, área vazia): quem chama abre a caixa de colar manual. Não cai em
+ * `readText()` de propósito: ele perderia os títulos e listas sem avisar.
+ * @returns {Promise<{ html: string, text: string } | null>}
+ */
+export async function readSystemClipboard() {
+  const cb = globalThis.navigator?.clipboard;
+  if (typeof cb?.read !== 'function') return null;
+  try {
+    let html = '';
+    let text = '';
+    for (const item of await cb.read()) {
+      if (!html && item.types.includes('text/html')) {
+        html = await (await item.getType('text/html')).text();
+      }
+      if (!text && item.types.includes('text/plain')) {
+        text = await (await item.getType('text/plain')).text();
+      }
+    }
+    return html || text ? { html, text } : null;
+  } catch {
+    return null;
+  }
+}

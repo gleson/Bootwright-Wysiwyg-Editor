@@ -3166,3 +3166,120 @@ body.editor-img-resize-dragging * { user-select: none !important; }
 }
 .editor-inspector__section > .editor-control { padding: 0 0.6rem; }
 .editor-inspector__section > .editor-control:last-child { padding-bottom: 0.6rem; }
+
+/* ==========================================================================
+   Celular (< 768px) — classe .editor-shell--mobile posta pelo MobileLayout.
+   As sidebars viram gavetas FECHADAS sobre o canvas; a topbar rola na
+   horizontal em vez de cortar os botões.
+   ========================================================================== */
+.editor-topbar__btn--mobile-only,
+.editor-block-toolbar__btn--mobile-only { display: none; }
+.editor-drawer-scrim { display: none; }
+
+.editor-shell--mobile .editor-topbar__btn--mobile-only,
+.editor-shell--mobile .editor-block-toolbar__btn--mobile-only { display: inline-flex; }
+
+/* ---- Topbar ---- */
+.editor-shell--mobile .editor-topbar {
+  justify-content: flex-start;
+  gap: 0.375rem;
+  padding: 0 0.5rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.editor-shell--mobile .editor-topbar::-webkit-scrollbar { display: none; }
+.editor-shell--mobile .editor-topbar__group { flex-shrink: 0; }
+.editor-shell--mobile .editor-topbar__group > .ms-2 { margin-left: 0 !important; }
+/* A marca e o seletor de dispositivo não servem na tela pequena: ela já É o celular. */
+.editor-shell--mobile .editor-topbar__brand,
+.editor-shell--mobile .editor-topbar__group--center { display: none; }
+.editor-shell--mobile .editor-topbar .btn-sm {
+  min-width: 36px;
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ---- Gavetas ---- */
+.editor-shell--mobile .editor-body { position: relative; }
+.editor-shell--mobile .editor-sidebar {
+  display: flex;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 160;
+  width: min(88%, 340px);
+  visibility: hidden;
+  transition: transform 0.22s ease, visibility 0.22s;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+.editor-shell--mobile .editor-sidebar--left  { left: 0;  transform: translateX(-100%); }
+.editor-shell--mobile .editor-sidebar--right { right: 0; transform: translateX(100%); }
+.editor-shell--mobile.editor-shell--left-open  .editor-sidebar--left,
+.editor-shell--mobile.editor-shell--right-open .editor-sidebar--right {
+  visibility: visible;
+  transform: none;
+}
+.editor-shell--mobile .editor-drawer-scrim {
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: 150;
+  background: rgba(15, 23, 42, 0.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+.editor-shell--mobile.editor-shell--left-open .editor-drawer-scrim,
+.editor-shell--mobile.editor-shell--right-open .editor-drawer-scrim {
+  opacity: 1;
+  pointer-events: auto;
+}
+@media (prefers-reduced-motion: reduce) {
+  .editor-shell--mobile .editor-sidebar,
+  .editor-shell--mobile .editor-drawer-scrim { transition: none; }
+}
+
+/* ---- Canvas ---- */
+.editor-shell--mobile .editor-canvas-wrapper { padding: 0.5rem; }
+.editor-shell--mobile .editor-canvas {
+  padding: var(--editor-canvas-padding-mobile);
+  min-height: 100%;
+}
+
+/* ---- Barra do bloco: alvos de toque maiores, sem o rótulo do tipo ---- */
+.editor-shell--mobile .editor-block-toolbar { max-width: calc(100% - 4px); flex-wrap: wrap; }
+.editor-shell--mobile .editor-block-toolbar__label { display: none; }
+.editor-shell--mobile .editor-block-toolbar__btn { width: 34px; height: 34px; }
+
+/* ---- Canvas vazio: atalhos ---- */
+.editor-canvas__placeholder-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+.editor-canvas__placeholder .editor-canvas__placeholder-actions i {
+  font-size: 1em;
+  margin: 0;
+  opacity: 1;
+}
+
+/* ---- Caixa de colar ---- */
+.editor-paste-dialog__box {
+  min-height: 180px;
+  max-height: 50vh;
+  overflow-y: auto;
+  line-height: 1.55;
+}
+.editor-paste-dialog__box.is-empty::before {
+  content: attr(data-placeholder);
+  color: var(--editor-text-muted);
+  pointer-events: none;
+}
+.editor-paste-dialog__box h1, .editor-paste-dialog__box h2,
+.editor-paste-dialog__box h3, .editor-paste-dialog__box h4 { margin: 0.6em 0 0.3em; }

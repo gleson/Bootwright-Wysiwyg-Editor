@@ -75,8 +75,11 @@ export class BlockToolbar {
       () => this._saveAsPattern());
     this.btnDup    = this._actionBtn('files',      'Duplicar (Ctrl+D)',         () => this._duplicate());
     this.btnDel    = this._actionBtn('trash',      'Excluir (Delete)',          () => this._delete(), 'danger');
+    // Celular: as propriedades ficam numa gaveta fechada — o atalho fica aqui.
+    this.btnProps  = this._actionBtn('sliders', 'Propriedades do bloco',
+      () => this.editor.ui.mobileLayout?.open('right'), 'mobile-only');
 
-    toolbar.append(this.btnDrag, this.labelEl,
+    toolbar.append(this.btnProps, this.btnDrag, this.labelEl,
       this.btnParent, this.btnUp, this.btnDown, this.btnEditImage,
       this.btnComment, this.btnLock, this.btnSavePattern, this.btnDup, this.btnDel);
     return toolbar;
@@ -187,8 +190,12 @@ export class BlockToolbar {
     const left = targetRect.left - wrapperRect.left
       + this.canvasWrapper.scrollLeft;
 
+    // Não deixa a barra passar da borda direita (bloco estreito ou deslocado,
+    // tela de celular): encosta à direita do wrapper visível.
+    const maxLeft = this.canvasWrapper.scrollLeft
+      + this.canvasWrapper.clientWidth - this.toolbar.offsetWidth - 2;
     this.toolbar.style.top = `${Math.max(2, top)}px`;
-    this.toolbar.style.left = `${Math.max(2, left)}px`;
+    this.toolbar.style.left = `${Math.max(2, Math.min(left, maxLeft))}px`;
   }
 
   _selectParent() {

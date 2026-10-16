@@ -19,7 +19,9 @@ import { formatHTML } from '../utils/htmlFormat.js';
 import { safeCss } from '../utils/url.js';
 import { generateThemeCss } from '../utils/bootstrapTheme.js';
 import { markdownToHtml } from '../utils/markdownImport.js';
-import { clipboardToHtml } from '../utils/clipboardImport.js';
+import { clipboardToHtml, readSystemClipboard } from '../utils/clipboardImport.js';
+import { MobileLayout } from '../ui/MobileLayout.js';
+import { PasteDialog } from '../ui/PasteDialog.js';
 import { BlockRegistry } from '../blocks/BlockRegistry.js';
 import { builtInBlocks } from '../blocks/built-in/index.js';
 import { BUILT_IN_TEMPLATES, getBuiltInTemplate } from '../blocks/built-in/templates.js';
@@ -470,6 +472,8 @@ export class Editor {
       compactEditor: new CompactEditor(this),
       // SeoDialog idem — aberto pelo botão da Topbar.
       seoDialog: new SeoDialog(this),
+      // Caixa "toque e segure → Colar" — fallback do botão Colar.
+      pasteDialog: new PasteDialog(this),
 
       topbar:       new Topbar(this),
       sidebarLeft:  new SidebarLeft(this),
@@ -480,6 +484,10 @@ export class Editor {
     this.ui.sidebarLeft.mount();
     this.ui.sidebarRight.mount();
     this.ui.canvas.mount();
+
+    // Telas estreitas: sidebars viram gavetas fechadas sobre o canvas.
+    this.ui.mobileLayout = new MobileLayout(this);
+    this.ui.mobileLayout.mount();
 
     this.renderer = new Renderer(this);
     this.renderer.mount();
@@ -1354,10 +1362,9 @@ export class Editor {
    * área de transferência) ou conteúdo externo convertido em blocos.
    * @returns {boolean} true se tratou o evento
    */
-  handleClipboardPaste(cd) {
+  handleClipboardPaste(cd, target = this.getSelectedId()) {
     const html = cd?.getData('text/html') ?? '';
     const text = cd?.getData('text/plain') ?? '';
-    const target = this.getSelectedId();
     const marker = /<meta name="wysiwyg-block" content="([^"]+)"/.exec(html)?.[1];
     if (this._clipboard && (marker === this._clipboardToken || (!html && !text))) {
       this.pasteBlock(target);
@@ -1365,8 +1372,39 @@ export class Editor {
     }
     const { nodes } = this.clipboardToNodes({ html, text });
     if (!nodes.length) return false;
-    this.insertNodesAt(target, nodes);
+    this.insertPastedNodes(nodes, target);
     return true;
+  }
+
+  /**
+   * Insere blocos colados após `targetId`. Um parágrafo VAZIO selecionado é
+   * substituído — é o que se cria só para ter onde colar.
+   */
+  insertPastedNodes(nodes, targetId = this.getSelectedId()) {
+    const target = targetId ? this.getNode(targetId) : null;
+    const replaceTarget = target?.type === 'paragraph' && !String(target.props?.text ?? '')
+      .replace(/<br\s*\/?>/gi, '').replace(/&nbsp;/g, ' ').trim();
+    return this.insertNodesAt(targetId, nodes, { replaceTarget });
+  }
+
+  /**
+   * Botão "Colar": lê a área de transferência com formatação e insere como
+   * blocos. Sem acesso a ela (API ausente, permissão negada), abre a caixa
+   * de colar manual. No celular é o único caminho: o canvas não é editável,
+   * então não há menu de "Colar" ao tocar nele.
+   * @returns {Promise<boolean>} true se colou direto
+   */
+  async pasteFromClipboard() {
+    const target = this.getSelectedId();
+    if (this.inlineEdit) this.commitInlineEdit();
+    const data = await readSystemClipboard();
+    if (data) {
+      const cd = { getData: (type) =>
+        type === 'text/html' ? data.html : type === 'text/plain' ? data.text : '' };
+      if (this.handleClipboardPaste(cd, target)) return true;
+    }
+    this.ui.pasteDialog?.show({ targetId: target });
+    return false;
   }
 
   pasteBlock(targetId) {
@@ -1594,9 +1632,20 @@ export class Editor {
       if (!html && !text) return;
       this._pasteIntoInlineEdit({ html, text });
     };
+    // Colagem que chega sem evento `paste` (alguns teclados de celular):
+    // o navegador ainda anuncia o conteúdo no `beforeinput`.
+    const onBeforeInput = (e) => {
+      if (e.inputType !== 'insertFromPaste' || !e.dataTransfer) return;
+      const html = e.dataTransfer.getData('text/html') ?? '';
+      const text = e.dataTransfer.getData('text/plain') ?? '';
+      if (!html && !text) return;
+      e.preventDefault();
+      this._pasteIntoInlineEdit({ html, text });
+    };
     element.addEventListener('keydown', onKeyDown);
     element.addEventListener('blur', onBlur);
     element.addEventListener('paste', onPaste);
+    element.addEventListener('beforeinput', onBeforeInput);
 
     this.inlineEdit = {
       id, target, originalValue, el: element, useHtml, sanitizeProfile, multiline,
@@ -1605,6 +1654,7 @@ export class Editor {
         element.removeEventListener('keydown', onKeyDown);
         element.removeEventListener('blur', onBlur);
         element.removeEventListener('paste', onPaste);
+        element.removeEventListener('beforeinput', onBeforeInput);
       },
     };
     this.bus.emit('inline-edit:started', { id, useHtml });

@@ -94,8 +94,34 @@ export class Topbar {
       class: 'btn btn-sm btn-outline-secondary ms-2',
       title: t('topbar.toggleSidebars'),
     }, [icon('layout-sidebar')]);
+    this.btnToggleSidebars.dataset.drawerToggle = 'left';
+    this.btnToggleSidebars.setAttribute('aria-expanded', 'false');
     this.btnToggleSidebars.addEventListener('click', () => this._toggleSidebars());
     this.startGroup.appendChild(this.btnToggleSidebars);
+
+    // Celular: abre a gaveta de propriedades do bloco selecionado.
+    this.btnProps = el('button', {
+      type: 'button',
+      class: 'btn btn-sm btn-outline-secondary editor-topbar__btn--mobile-only',
+      title: t('topbar.properties'),
+      'aria-label': t('topbar.properties'),
+      'aria-expanded': 'false',
+      dataset: { drawerToggle: 'right' },
+    }, [icon('sliders')]);
+    this.btnProps.addEventListener('click', () => this.editor.ui.mobileLayout?.toggle('right'));
+    this.startGroup.appendChild(this.btnProps);
+
+    // Colar da área de transferência (com formatação) como blocos. No
+    // celular é o único jeito: o canvas não é editável, sem menu "Colar".
+    this.btnPaste = el('button', {
+      type: 'button',
+      class: 'btn btn-sm btn-outline-secondary',
+      title: t('topbar.paste'),
+      'aria-label': t('topbar.paste'),
+    }, [icon('clipboard')]);
+    this.btnPaste.addEventListener('mousedown', (e) => e.preventDefault());
+    this.btnPaste.addEventListener('click', () => this.editor.pasteFromClipboard());
+    this.startGroup.appendChild(this.btnPaste);
 
     // Editor rápido (CompactEditor) — abre dialog full-screen sem sidebars
     this.btnCompactEditor = el('button', {
@@ -184,6 +210,8 @@ export class Topbar {
       'aria-label': t('topbar.io'),
       'data-bs-toggle': 'dropdown',
       'aria-expanded': 'false',
+      // No celular a topbar rola na horizontal (overflow) e cortaria o menu.
+      'data-bs-popper-config': '{"strategy":"fixed"}',
     }, [icon('arrow-down-up')]);
 
     const item = (iconName, labelKey, onClick) => {
@@ -214,6 +242,8 @@ export class Topbar {
   }
 
   _toggleSidebars() {
+    const mobile = this.editor.ui.mobileLayout;
+    if (mobile?.isMobile) { mobile.toggle('left'); return; }
     const hidden = this.root.classList.toggle('editor-shell--no-sidebars');
     const i = this.btnToggleSidebars.querySelector('i');
     i.className = `bi bi-${hidden ? 'layout-sidebar-inset-reverse' : 'layout-sidebar'}`;

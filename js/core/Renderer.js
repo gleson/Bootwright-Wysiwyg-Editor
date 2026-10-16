@@ -1,3 +1,4 @@
+import { t } from '../i18n/index.js';
 import { el, clear, icon } from '../utils/dom.js';
 import { safeCss } from '../utils/url.js';
 
@@ -107,6 +108,31 @@ export class Renderer {
       el('small', {}, 'Use a aba "Blocos" no painel esquerdo para começar. '
         + 'Parágrafos, títulos e linhas podem ir direto aqui — a Seção só é '
         + 'necessária se você quiser o container do Bootstrap.'),
+      this._emptyActions(),
+    ]);
+  }
+
+  /** Atalhos do canvas vazio — no celular as sidebars começam fechadas. */
+  _emptyActions() {
+    const btn = (iconName, label, onClick) => {
+      const b = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary' },
+        [icon(iconName), ' ', label]);
+      b.addEventListener('mousedown', (e) => e.preventDefault());
+      b.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
+      return b;
+    };
+    return el('div', { class: 'editor-canvas__placeholder-actions' }, [
+      btn('clipboard', t('canvas.empty.paste'), () => this.editor.pasteFromClipboard()),
+      btn('plus-lg', t('canvas.empty.addBlock'), () => {
+        const mobile = this.editor.ui.mobileLayout;
+        if (mobile?.isMobile) mobile.open('left');
+        else {
+          if (this.editor.root.classList.contains('editor-shell--no-sidebars')) {
+            this.editor.ui.topbar?._toggleSidebars();
+          }
+          this.editor.root.querySelector('[data-region="sidebar-left"] input')?.focus();
+        }
+      }),
     ]);
   }
 
