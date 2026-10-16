@@ -3193,8 +3193,10 @@ body.editor-img-resize-dragging * { user-select: none !important; }
 .editor-shell--mobile .editor-topbar__group { flex-shrink: 0; }
 .editor-shell--mobile .editor-topbar__group > .ms-2 { margin-left: 0 !important; }
 /* A marca e o seletor de dispositivo não servem na tela pequena: ela já É o celular. */
+/* O idioma também: trocar recarrega a página, e o seletor ocupa 1/3 da barra. */
 .editor-shell--mobile .editor-topbar__brand,
-.editor-shell--mobile .editor-topbar__group--center { display: none; }
+.editor-shell--mobile .editor-topbar__group--center,
+.editor-shell--mobile .editor-lang-switch { display: none; }
 .editor-shell--mobile .editor-topbar .btn-sm {
   min-width: 36px;
   min-height: 36px;
