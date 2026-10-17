@@ -1664,7 +1664,7 @@ export class Editor {
     if (!this.inlineEdit) return;
     const { id, target, originalValue, el, cleanup, useHtml, sanitizeProfile } = this.inlineEdit;
     let newValue = target.getValue ? target.getValue(el)
-      : useHtml ? el.innerHTML : el.textContent;
+      : useHtml ? el.innerHTML : this._plainTextWithBreaks(el);
     if (useHtml && this.sanitizer.isReady()) {
       newValue = this.sanitizer.html(newValue, sanitizeProfile);
     }
@@ -1680,6 +1680,41 @@ export class Editor {
         if (patch) this.updateBlock(id, patch);
       }
     }
+  }
+
+  /**
+   * Texto puro do elemento em edição, COM as quebras de linha. O Enter do
+   * navegador num contenteditable cria `<br>` (ou `<div>`, no Chrome e no
+   * celular), e o `textContent` descarta os dois: a quebra digitada numa
+   * citação sumia ao sair da edição. O `<br>` final de um bloco é só o
+   * marcador que o navegador põe para a linha vazia aparecer — não conta.
+   */
+  _plainTextWithBreaks(root) {
+    const BLOCK = /^(DIV|P|LI|BLOCKQUOTE|PRE|H[1-6])$/;
+    let out = '';
+    let pendingBreak = false;
+    const breakLine = () => { if (out && !out.endsWith('\n')) out += '\n'; };
+    const walk = (node) => {
+      for (const child of node.childNodes) {
+        if (child.nodeType === Node.TEXT_NODE) {
+          if (!child.data) continue;
+          if (pendingBreak) { breakLine(); pendingBreak = false; }
+          out += child.data;
+        } else if (child.nodeName === 'BR') {
+          if (pendingBreak) { breakLine(); pendingBreak = false; }
+          const trailing = !child.nextSibling && child.previousSibling
+            && (child.parentNode === root || BLOCK.test(child.parentNode.nodeName));
+          if (!trailing) out += '\n';
+        } else if (child.nodeType === Node.ELEMENT_NODE) {
+          const block = BLOCK.test(child.nodeName);
+          if (block) { breakLine(); pendingBreak = false; }
+          walk(child);
+          if (block) pendingBreak = true;
+        }
+      }
+    };
+    walk(root);
+    return out;
   }
 
   cancelInlineEdit() {
@@ -1760,7 +1795,7 @@ export class Editor {
     const sliceValue = (range) => {
       const div = document.createElement('div');
       div.appendChild(range.cloneContents());
-      if (!useHtml) return div.textContent;
+      if (!useHtml) return this._plainTextWithBreaks(div);
       return this.sanitizer.isReady()
         ? this.sanitizer.html(div.innerHTML, sanitizeProfile) : div.innerHTML;
     };

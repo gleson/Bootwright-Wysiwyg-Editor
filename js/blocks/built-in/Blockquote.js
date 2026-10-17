@@ -14,14 +14,37 @@ export class Blockquote extends Block {
   static allowedChildren = null;
   static editableProp = 'text';
   static editableMultiline = true;
-  /** Edita só o <p> da citação (o rodapé com a fonte fica de fora). */
-  static editableSelector = 'p';
+  /**
+   * O <p> edita a citação e o <footer> edita a fonte: cada um é uma prop.
+   * O `querySelector` da edição pelo nome da prop pega o primeiro, o <p>.
+   */
+  static editableSelector = 'p, footer';
   static clickToEdit = true;
   /**
    * Fast-path: só a citação (`text`, no `<p>`) atualiza in-place. `source`
    * cria/remove o `<footer>` condicional → cai no re-render normal.
    */
   static fastUpdate = { text: { target: 'p' } };
+
+  /** Clique no rodapé edita o autor (linha única); no resto, a citação. */
+  static getInlineEditTarget(blockEl, eventTarget, node) {
+    const footer = eventTarget?.closest?.('footer');
+    if (footer && blockEl.contains(footer)) {
+      return {
+        element: footer,
+        multiline: false,
+        read:  (n) => n.props.source ?? '',
+        write: (_, v) => ({ props: { source: v.trim() } }),
+      };
+    }
+    const p = blockEl.querySelector('p');
+    if (!p) return null;
+    return {
+      element: p,
+      read:  (n) => n.props.text ?? '',
+      write: (_, v) => ({ props: { text: v } }),
+    };
+  }
 
   static render(node) {
     const bq = document.createElement('blockquote');
